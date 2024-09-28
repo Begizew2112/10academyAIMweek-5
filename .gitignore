@@ -1,5 +1,6 @@
 data/
 /notebook/telegram_channel_messages.csv
+/notebook/labeled_messages_output.txt
 env/
 venv/
 ENV/
