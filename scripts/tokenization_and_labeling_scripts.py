@@ -1,58 +1,65 @@
 import pandas as pd
 import re
 
-# Function to tokenize and label the message
-def label_message_utf8_with_birr(message):
-    # Split the message at the first occurrence of '\n'
+# Load the CSV file into a DataFrame
+df1 = pd.read_csv('path_to_your_file.csv')
+
+# Define the tokenization function
+def tokenize_message(message):
+    if not isinstance(message, str) or message.strip() == "":
+        return []
+    
+    tokenized_message = []
     if '\n' in message:
         first_line, remaining_message = message.split('\n', 1)
     else:
         first_line, remaining_message = message, ""
+
+    first_line_tokens = re.finditer(r'\S+', first_line)
     
-    labeled_tokens = []
-    
-    # Tokenize the first line
-    first_line_tokens = re.findall(r'\S+', first_line)
-    
-    # Label the first token as B-PRODUCT and the rest as I-PRODUCT
-    if first_line_tokens:
-        labeled_tokens.append(f"{first_line_tokens[0]} B-PRODUCT")  # First token as B-PRODUCT
-        for token in first_line_tokens[1:]:
-            labeled_tokens.append(f"{token} I-PRODUCT")  # Remaining tokens as I-PRODUCT
-    
-    # Process the remaining message normally
+    for match in first_line_tokens:
+        token = match.group()
+        start_pos = match.start()
+        end_pos = match.end()
+        tokenized_message.append((token, start_pos, end_pos))
+
     if remaining_message:
         lines = remaining_message.split('\n')
         for line in lines:
-            tokens = re.findall(r'\S+', line)  # Tokenize each line while considering non-ASCII characters
-            
-            for token in tokens:
-                # Check if token is a price (e.g., 500 ETB, $100, or ብር)
-                if re.match(r'^\d{10,}$', token):
-                    labeled_tokens.append(f"{token} O")  # Label as O for "other" or outside of any entity
-                elif re.match(r'^\d+(\.\d{1,2})?$', token) or 'ETB' in token or 'ዋጋ' in token or '$' in token or 'ብር' in token:
-                    labeled_tokens.append(f"{token} I-PRICE")
-                # Check if token could be a location (e.g., cities or general location names)
-                elif any(loc in token for loc in ['Addis Ababa','መገናኛ', '376', 'ሜክሲኮ']):
-                    labeled_tokens.append(f"{token} I-LOC")
-                # Assume other tokens are part of a product name or general text
-                else:
-                    labeled_tokens.append(f"{token} O")
+            tokens = re.finditer(r'\S+', line)
+            for match in tokens:
+                token = match.group()
+                start_pos = match.start()
+                end_pos = match.end()
+                tokenized_message.append((token, start_pos, end_pos))
     
-    return "\n".join(labeled_tokens)
+    return tokenized_message
 
-# Load your dataset (replace with the path to your dataset)
-df = pd.read_csv('your_dataset.csv')
+# Define the labeling function
+def label_tokens(tokenized_message):
+    labeled_tokens_with_positions = []
+    first_token = True
+    for token, start_pos, end_pos in tokenized_message:
+        if first_token:
+            label = "B-PRODUCT"
+            first_token = False
+        elif re.match(r'^\d{10,}$', token):
+            label = "O"
+        elif re.match(r'^\d+(\.\d{1,2})?$', token) or any(currency in token for currency in ['ETB', 'ዋጋ', '$', 'ብር']):
+            label = "I-PRICE"
+        elif any(loc in token for loc in ['Addis Ababa', 'ዘፍመሽ', 'መገናኛ', 'ግራንድ', '376', 'ሜክሲኮ']):
+            label = "I-LOC"
+        else:
+            label = "O"
+        labeled_tokens_with_positions.append(f"{token:<20} {start_pos:<10} {label}")
+    return "\n".join(labeled_tokens_with_positions)
 
-# Apply the function to the 'cleaned_message' column
-df['Labeled_Message'] = df['cleaned_message'].apply(label_message_utf8_with_birr)
+# Apply the tokenization and labeling functions
+df1['tokenized_message'] = df1['cleaned_message'].apply(tokenize_message)
+df1['labeled_message'] = df1['tokenized_message'].apply(label_tokens)
 
-# Save the labeled data to a CSV file
-df[['cleaned_message', 'Labeled_Message']].to_csv('labeled_messages.csv', index=False)
+# Save the result to a new CSV file (optional)
+df1.to_csv('tokenized_labeled_messages.csv', index=False)
 
-# Optional: Save the labeled data to a TXT file
-with open('labeled_messages.txt', 'w', encoding='utf-8') as file:
-    for message in df['Labeled_Message']:
-        file.write(message + '\n\n')  # Add a blank line between messages
-
-print("Tokenization and labeling completed. Files saved as 'labeled_messages.csv' and 'labeled_messages.txt'.")
+# View the results
+print(df1[['cleaned_message', 'tokenized_message', 'labeled_message']].head())
